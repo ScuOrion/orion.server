@@ -11,6 +11,9 @@
 package org.eclipse.orion.internal.server.servlets.file;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -21,6 +24,8 @@ import java.io.StringWriter;
 import java.io.Writer;
 import java.net.URL;
 import java.security.NoSuchAlgorithmException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -35,6 +40,7 @@ import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.filesystem.provider.FileInfo;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
+import org.eclipse.orion.internal.server.core.Activator;
 import org.eclipse.orion.internal.server.servlets.ServletResourceHandler;
 import org.eclipse.orion.server.core.IOUtilities;
 import org.eclipse.orion.server.core.ProtocolConstants;
@@ -134,6 +140,49 @@ class FileHandlerV1 extends GenericFileHandler {
 
 		// return metadata with the new Etag
 		handleGetMetadata(request, response, file);
+		saveHistoryFile(request, response, file);
+	}
+
+	private void saveHistoryFile(HttpServletRequest request, HttpServletResponse response, IFileStore file) throws NoSuchAlgorithmException, CoreException,
+			IOException, JSONException {
+		// TODO Auto-generated method stub
+		String currentFilePath = file.toString();
+		// split current path
+		String[] temp = new String[2];
+		if (currentFilePath.lastIndexOf("/") != -1) {
+			temp[0] = currentFilePath.substring(0, currentFilePath.lastIndexOf("/"));// path
+			temp[1] = currentFilePath.substring((currentFilePath.lastIndexOf("/") + 1), currentFilePath.length());// filename
+		}
+		String foldName = temp[1].substring(0, temp[1].lastIndexOf("."));
+		// get local time
+		String dateNowStr = new SimpleDateFormat("yyyyMMddHHmm").format(new Date());
+		/*
+		 * String date = new SimpleDateFormat("yyyy-MM-dd HH:mm").format(new Date());
+		 */
+		String destPath = Activator.getDefault().getPlatformLocation().toString() + "metadata/plugins/" + foldName;
+		String destFilePath = destPath + "/" + dateNowStr + ".js";
+		// Create new path if no exist
+		if (!new File(destPath).exists()) {
+			new File(destPath).mkdirs();
+		}
+		FileInputStream in = new FileInputStream(new File(currentFilePath));
+		File destFile = new File(destFilePath);
+		// Create new file if no exist
+		if (!destFile.exists()) {
+			try {
+				destFile.createNewFile();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		FileOutputStream out = new FileOutputStream(destFile);
+		byte[] buffer = new byte[128];
+		int byteread = 0;
+		while ((byteread = in.read(buffer)) != -1) {
+			out.write(buffer, 0, byteread);
+		}
+		in.close();
+		out.close();
 	}
 
 	private void handlePatchContents(HttpServletRequest request, BufferedReader requestReader, HttpServletResponse response, IFileStore file)
@@ -228,6 +277,7 @@ class FileHandlerV1 extends GenericFileHandler {
 				case POST:
 					if ("PATCH".equals(request.getHeader(ProtocolConstants.HEADER_METHOD_OVERRIDE))) {
 						handlePatchContents(request, request.getReader(), response, file);
+						saveHistoryFile(request, response, file);
 					}
 					break;
 				default:
@@ -260,6 +310,15 @@ class FileHandlerV1 extends GenericFileHandler {
 					return false;
 				}
 			}
+			if ("fileHistory".equals(parts)) {
+				switch (getMethod(request)) {
+				case GET:
+					handleGetFileHistory(request, response, file);
+					return true;
+				default:
+					return false;
+				}
+			}
 		} catch (JSONException e) {
 			return statusHandler.handleRequest(request, response, new ServerStatus(IStatus.ERROR, HttpServletResponse.SC_BAD_REQUEST,
 					"Syntax error in request", e));
@@ -268,5 +327,14 @@ class FileHandlerV1 extends GenericFileHandler {
 				throw new ServletException(NLS.bind("Error retrieving file: {0}", file), e);
 		}
 		return false;
+	}
+
+	// unimplemented
+	private void handleGetFileHistory(HttpServletRequest request, HttpServletResponse response, IFileStore file) throws NoSuchAlgorithmException,
+			CoreException, IOException, JSONException {
+		// TODO Auto-generated method stub
+		JSONObject metadata = getMetadata(request, file);
+		response.setHeader(ProtocolConstants.KEY_ETAG, metadata.getString(ProtocolConstants.KEY_ETAG));
+		OrionServlet.writeJSONResponse(request, response, metadata);
 	}
 }
