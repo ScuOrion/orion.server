@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.orion.internal.server.servlets;
 
+import java.net.URL;
 import java.util.Collection;
 import java.util.Dictionary;
 import java.util.Hashtable;
@@ -17,6 +18,8 @@ import java.util.Properties;
 
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Path;
 import org.eclipse.orion.internal.server.core.metastore.SimpleMetaStoreUtil;
 import org.eclipse.orion.internal.server.servlets.workspace.ProjectParentDecorator;
 import org.eclipse.orion.internal.server.servlets.workspace.authorization.AuthorizationService;
@@ -30,6 +33,7 @@ import org.eclipse.orion.server.core.PreferenceHelper;
 import org.eclipse.orion.server.core.ServerConstants;
 import org.eclipse.orion.server.core.metastore.UserInfo;
 import org.eclipse.orion.server.core.users.UserConstants;
+import org.eclipse.osgi.service.datalocation.Location;
 import org.osgi.framework.BundleActivator;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Filter;
@@ -42,8 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Activator for the server servlet bundle. Responsible for tracking required services
- * and registering/unregistering servlets.
+ * Activator for the server servlet bundle. Responsible for tracking required services and registering/unregistering servlets.
  */
 public class Activator implements BundleActivator {
 
@@ -86,6 +89,32 @@ public class Activator implements BundleActivator {
 		return bundleContext;
 	}
 
+	public IPath getPlatformLocation() {
+		BundleContext context = Activator.getDefault().getContext();
+		Collection<ServiceReference<Location>> refs;
+		try {
+			refs = context.getServiceReferences(Location.class, Location.INSTANCE_FILTER);
+		} catch (InvalidSyntaxException e) {
+			// we know the instance location filter syntax is valid
+			throw new RuntimeException(e);
+		}
+		if (refs.isEmpty())
+			return null;
+		ServiceReference<Location> ref = refs.iterator().next();
+		Location location = context.getService(ref);
+		try {
+			if (location == null)
+				return null;
+			URL root = location.getURL();
+			if (root == null)
+				return null;
+			// strip off file: prefix from URL
+			return new Path(root.toExternalForm().substring(5));
+		} finally {
+			context.ungetService(ref);
+		}
+	}
+
 	private synchronized ServiceTracker<IWebResourceDecorator, IWebResourceDecorator> getDecoratorTracker() {
 		if (decoratorTracker == null) {
 			decoratorTracker = new ServiceTracker<IWebResourceDecorator, IWebResourceDecorator>(bundleContext, IWebResourceDecorator.class, null);
@@ -103,12 +132,13 @@ public class Activator implements BundleActivator {
 	 * Registers services supplied by this bundle
 	 */
 	private void registerServices() {
-		//adds the import/export locations to representations
+		// adds the import/export locations to representations
 		transferDecoratorRegistration = bundleContext.registerService(IWebResourceDecorator.class, new TransferResourceDecorator(), null);
-		//adds parent links to representations
+		// adds parent links to representations
 		parentDecoratorRegistration = bundleContext.registerService(IWebResourceDecorator.class, new ProjectParentDecorator(), null);
 	}
 
+	@Override
 	public void start(BundleContext context) throws Exception {
 		singleton = this;
 		bundleContext = context;
@@ -118,6 +148,7 @@ public class Activator implements BundleActivator {
 		initializeAdminUser();
 	}
 
+	@Override
 	public void stop(BundleContext context) throws Exception {
 		if (authServiceTracker != null) {
 			authServiceTracker.close();
@@ -148,7 +179,7 @@ public class Activator implements BundleActivator {
 	}
 
 	String getAuthName() {
-		//lookup order is:
+		// lookup order is:
 		// 1: Defined preference called "orion.auth.name"
 		// 2: System property called "orion.tests.authtype"
 		// 3: Default to Form+OAuth
@@ -177,7 +208,7 @@ public class Activator implements BundleActivator {
 			}
 		}
 
-		@SuppressWarnings({"rawtypes", "unchecked"})
+		@SuppressWarnings({ "rawtypes", "unchecked" })
 		@Override
 		public IAuthenticationService addingService(ServiceReference<IAuthenticationService> reference) {
 			if ("true".equals(reference.getProperty(PROP_CONFIGURED))) //$NON-NLS-1$
@@ -202,7 +233,8 @@ public class Activator implements BundleActivator {
 		try {
 			// initialize the admin account in the IMetaStore
 			String adminDefaultPassword = PreferenceHelper.getString(ServerConstants.CONFIG_AUTH_ADMIN_DEFAULT_PASSWORD);
-			Boolean adminUserFolderExists = SimpleMetaStoreUtil.readMetaUserFolder(OrionConfiguration.getRootLocation().toLocalFile(EFS.NONE, null), ADMIN_LOGIN_VALUE).exists();
+			Boolean adminUserFolderExists = SimpleMetaStoreUtil.readMetaUserFolder(OrionConfiguration.getRootLocation().toLocalFile(EFS.NONE, null),
+					ADMIN_LOGIN_VALUE).exists();
 			if (!adminUserFolderExists && adminDefaultPassword != null) {
 				UserInfo userInfo = new UserInfo();
 				userInfo.setUserName(ADMIN_LOGIN_VALUE);
