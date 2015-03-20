@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.orion.internal.server.servlets.file;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -40,7 +42,7 @@ import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.filesystem.provider.FileInfo;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.orion.internal.server.core.Activator;
+import org.eclipse.orion.internal.server.servlets.Activator;
 import org.eclipse.orion.internal.server.servlets.ServletResourceHandler;
 import org.eclipse.orion.server.core.IOUtilities;
 import org.eclipse.orion.server.core.ProtocolConstants;
@@ -86,6 +88,8 @@ class FileHandlerV1 extends GenericFileHandler {
 	 */
 	protected void handleGetMetadata(HttpServletRequest request, HttpServletResponse response, IFileStore file) throws IOException, NoSuchAlgorithmException,
 			JSONException, CoreException {
+		JSONObject meta = new JSONObject();
+		meta.put("key", "value");
 		JSONObject metadata = getMetadata(request, file);
 		response.setHeader(ProtocolConstants.KEY_ETAG, metadata.getString(ProtocolConstants.KEY_ETAG));
 		OrionServlet.writeJSONResponse(request, response, metadata);
@@ -140,7 +144,7 @@ class FileHandlerV1 extends GenericFileHandler {
 
 		// return metadata with the new Etag
 		handleGetMetadata(request, response, file);
-		saveHistoryFile(request, response, file);
+		// saveHistoryFile(request, response, file);
 	}
 
 	private void saveHistoryFile(HttpServletRequest request, HttpServletResponse response, IFileStore file) throws NoSuchAlgorithmException, CoreException,
@@ -148,24 +152,28 @@ class FileHandlerV1 extends GenericFileHandler {
 		// TODO Auto-generated method stub
 		String currentFilePath = file.toString();
 		// split current path
-		String[] temp = new String[2];
+		String[] temp = new String[4];
 		if (currentFilePath.lastIndexOf("/") != -1) {
-			temp[0] = currentFilePath.substring(0, currentFilePath.lastIndexOf("/"));// path
+			temp[0] = currentFilePath.substring(0, currentFilePath.lastIndexOf("/"));// filePath
 			temp[1] = currentFilePath.substring((currentFilePath.lastIndexOf("/") + 1), currentFilePath.length());// filename
+			if (currentFilePath.lastIndexOf("bundles") > 1) {
+				temp[2] = currentFilePath.substring(currentFilePath.lastIndexOf("bundles") + 8, currentFilePath.length());
+				temp[3] = temp[2].toString().substring(0, temp[2].toString().indexOf("/")) + "/.history";
+			}
 		}
 		String foldName = temp[1].substring(0, temp[1].lastIndexOf("."));
 		// get local time
 		String dateNowStr = new SimpleDateFormat("yyyyMMddHHmm").format(new Date());
-		/*
-		 * String date = new SimpleDateFormat("yyyy-MM-dd HH:mm").format(new Date());
-		 */
-		String destPath = Activator.getDefault().getPlatformLocation().toString() + "metadata/plugins/" + foldName;
-		String destFilePath = destPath + "/" + dateNowStr + ".js";
+		String destPath;
+		if (currentFilePath.lastIndexOf("bundles") > 1)
+			destPath = Activator.getDefault().getPlatformLocation().toString() + ".metadata/.plugins/" + temp[3] + "/" + foldName;
+		else
+			destPath = Activator.getDefault().getPlatformLocation().toString() + ".metadata/.plugins/" + foldName;
+		String destFilePath = destPath + "/" + dateNowStr;
 		// Create new path if no exist
 		if (!new File(destPath).exists()) {
 			new File(destPath).mkdirs();
 		}
-		FileInputStream in = new FileInputStream(new File(currentFilePath));
 		File destFile = new File(destFilePath);
 		// Create new file if no exist
 		if (!destFile.exists()) {
@@ -175,7 +183,8 @@ class FileHandlerV1 extends GenericFileHandler {
 				e.printStackTrace();
 			}
 		}
-		FileOutputStream out = new FileOutputStream(destFile);
+		BufferedInputStream in = new BufferedInputStream(new FileInputStream(new File(currentFilePath)));
+		BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(destFile));
 		byte[] buffer = new byte[128];
 		int byteread = 0;
 		while ((byteread = in.read(buffer)) != -1) {
@@ -333,8 +342,8 @@ class FileHandlerV1 extends GenericFileHandler {
 	private void handleGetFileHistory(HttpServletRequest request, HttpServletResponse response, IFileStore file) throws NoSuchAlgorithmException,
 			CoreException, IOException, JSONException {
 		// TODO Auto-generated method stub
-		JSONObject metadata = getMetadata(request, file);
-		response.setHeader(ProtocolConstants.KEY_ETAG, metadata.getString(ProtocolConstants.KEY_ETAG));
+		JSONObject metadata = new JSONObject();
+		metadata.put("123", "123");
 		OrionServlet.writeJSONResponse(request, response, metadata);
 	}
 }
